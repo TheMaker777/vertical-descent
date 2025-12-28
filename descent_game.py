@@ -11,15 +11,15 @@ except Exception as e:
     input("Press Enter to exit...")
     sys.exit()
 
-# Auto-detect screen size for fullscreen support
-info = pygame.display.Info()
-WIDTH, HEIGHT = info.current_w, info.current_h
-screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
+# Fixed window size (not fullscreen)
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Descent Game")
 clock = pygame.time.Clock()
 
 # Colors
 RED = (255, 0, 0)
+BLACK = (0, 0, 0)  # Changed to black text
 WHITE = (255, 255, 255)
 BG = (20, 20, 20)
 GRAY = (100, 100, 100)
@@ -32,21 +32,21 @@ font = pygame.font.SysFont(None, 48)
 small_font = pygame.font.SysFont(None, 36)
 
 # Game state
-state = "menu"  # menu, playing, game_over, settings
-player_size = min(WIDTH, HEIGHT) // 20
+state = "menu"
+player_size = 40
 player_x = WIDTH // 2 - player_size // 2
 player_y = HEIGHT // 4
-player_speed = max(WIDTH, HEIGHT) // 100
+player_speed = 8
 gravity = 0.3
 velocity_y = 0
-platform_height = max(WIDTH, HEIGHT) // 40
-gap_width = WIDTH // 4
+platform_height = 25
+gap_width = 150
 platforms = []
 platform_speed = 2
 spawn_timer = 0
 score = 0
-difficulty = "normal"  # easy, normal, hard
-game_mode = "easy"  # current game mode for leaderboards
+difficulty = "normal"
+game_mode = "easy"
 
 # Difficulty settings
 DIFFICULTY = {
@@ -87,20 +87,20 @@ def clear_leaderboard(mode):
     if os.path.exists(filename):
         os.remove(filename)
 
-def draw_button(text, x, y, w, h, color=WHITE, hover_color=GREEN):
+def draw_button(text, x, y, w, h, color=WHITE, hover_color=GREEN, selected=False):
     mouse = pygame.mouse.get_pos()
     click = pygame.mouse.get_pressed()
     
     rect = pygame.Rect(x, y, w, h)
     if rect.collidepoint(mouse):
         pygame.draw.rect(screen, hover_color, rect)
-        if click[0] == 1:
+        if click[0] == 1 and not selected:
             return True
     else:
-        pygame.draw.rect(screen, color, rect)
+        pygame.draw.rect(screen, color if not selected else GREEN, rect)
     pygame.draw.rect(screen, WHITE, rect, 3)
     
-    text_surf = small_font.render(text, True, WHITE)
+    text_surf = small_font.render(text, True, BLACK)  # Black text
     screen.blit(text_surf, (x + (w - text_surf.get_width()) // 2, y + (h - text_surf.get_height()) // 2))
     return False
 
@@ -108,48 +108,84 @@ def draw_home_menu():
     screen.fill(BG)
     
     # Logo - big red square
-    logo_size = min(WIDTH, HEIGHT) // 6
-    pygame.draw.rect(screen, RED, (WIDTH//2 - logo_size//2, HEIGHT//3 - logo_size//2, logo_size, logo_size))
+    logo_size = 120
+    pygame.draw.rect(screen, RED, (WIDTH//2 - logo_size//2, HEIGHT//4 - logo_size//2, logo_size, logo_size))
     
-    # Title
-    title = title_font.render("DESCENT", True, WHITE)
-    screen.blit(title, (WIDTH//2 - title.get_width()//2, HEIGHT//3 - 100))
+    # Title - black text
+    title = title_font.render("DESCENT", True, BLACK)
+    screen.blit(title, (WIDTH//2 - title.get_width()//2, HEIGHT//4 - 120))
     
-    # Buttons
-    btn_w, btn_h = WIDTH//3, HEIGHT//10
-    play_clicked = draw_button("PLAY", WIDTH//2 - btn_w//2, HEIGHT//2, btn_w, btn_h)
-    settings_clicked = draw_button("SETTINGS", WIDTH//2 - btn_w//2, HEIGHT//2 + btn_h + 20, btn_w, btn_h)
+    # Buttons - more spacing
+    btn_w, btn_h = 200, 60
+    btn_y = HEIGHT//2
+    play_clicked = draw_button("PLAY", WIDTH//2 - btn_w//2, btn_y, btn_w, btn_h)
+    leaderboard_clicked = draw_button("LEADERBOARD", WIDTH//2 - btn_w//2, btn_y + 80, btn_w, btn_h)
+    settings_clicked = draw_button("SETTINGS", WIDTH//2 - btn_w//2, btn_y + 160, btn_w, btn_h)
     
-    return play_clicked, settings_clicked
+    return play_clicked, leaderboard_clicked, settings_clicked
 
 def draw_settings():
     screen.fill(BG)
     
-    # Title
-    title = title_font.render("SETTINGS", True, WHITE)
+    # Title - black text
+    title = title_font.render("SETTINGS", True, BLACK)
     screen.blit(title, (WIDTH//2 - title.get_width()//2, 50))
     
-    # Difficulty buttons
-    btn_w, btn_h = WIDTH//4, HEIGHT//12
+    # Difficulty buttons - centered perfectly
+    btn_w, btn_h = 120, 50
     y_start = HEIGHT//3
-    easy_clicked = draw_button("EASY", WIDTH//4 - btn_w//2, y_start, btn_w, btn_h, GREEN if difficulty == "easy" else WHITE)
-    normal_clicked = draw_button("NORMAL", WIDTH//2 - btn_w//2, y_start, btn_w, btn_h, GREEN if difficulty == "normal" else WHITE)
-    hard_clicked = draw_button("HARD", 3*WIDTH//4 - btn_w//2, y_start, btn_w, btn_h, GREEN if difficulty == "hard" else WHITE)
+    easy_x = WIDTH//2 - btn_w*1.5 - 20
+    normal_x = WIDTH//2 - btn_w//2
+    hard_x = WIDTH//2 + btn_w*0.5 + 20
     
-    # Clear leaderboard buttons
-    clear_y = y_start + btn_h + 50
-    clear_easy = draw_button("Clear Easy", WIDTH//6, clear_y, WIDTH//6, btn_h//1.5)
-    clear_normal = draw_button("Clear Normal", WIDTH//2 - WIDTH//12, clear_y, WIDTH//6, btn_h//1.5)
-    clear_hard = draw_button("Clear Hard", 5*WIDTH//6, clear_y, WIDTH//6, btn_h//1.5)
+    easy_clicked = draw_button("EASY", easy_x, y_start, btn_w, btn_h, selected=difficulty == "easy")
+    normal_clicked = draw_button("NORMAL", normal_x, y_start, btn_w, btn_h, selected=difficulty == "normal")
+    hard_clicked = draw_button("HARD", hard_x, y_start, btn_w, btn_h, selected=difficulty == "hard")
+    
+    # Clear leaderboard buttons - perfectly centered under each
+    clear_y = y_start + 80
+    clear_easy = draw_button("Clear Easy", easy_x, clear_y, btn_w, 35)
+    clear_normal = draw_button("Clear Normal", normal_x, clear_y, btn_w, 35)
+    clear_hard = draw_button("Clear Hard", hard_x, clear_y, btn_w, 35)
     
     # Back button
-    back_clicked = draw_button("BACK", WIDTH//2 - btn_w//2, HEIGHT - 100, btn_w, btn_h//1.5)
+    back_clicked = draw_button("BACK", WIDTH//2 - 100, HEIGHT - 100, 200, 50)
     
     return {
         "easy": easy_clicked, "normal": normal_clicked, "hard": hard_clicked,
         "clear_easy": clear_easy, "clear_normal": clear_normal, "clear_hard": clear_hard,
         "back": back_clicked
     }
+
+def draw_leaderboards():
+    screen.fill(BG)
+    
+    # Title
+    title = title_font.render("LEADERBOARDS", True, BLACK)
+    screen.blit(title, (WIDTH//2 - title.get_width()//2, 30))
+    
+    # More spacing between modes
+    y_offset = 120
+    for mode in ["easy", "normal", "hard"]:
+        # Mode title
+        mode_title = font.render(f"{mode.upper()}:", True, BLACK)
+        screen.blit(mode_title, (50, y_offset))
+        y_offset += 60  # More space
+        
+        scores = load_scores(mode)
+        if not scores:
+            no_scores = small_font.render("No scores yet", True, BLACK)
+            screen.blit(no_scores, (80, y_offset))
+        else:
+            for i, entry in enumerate(scores):
+                line = small_font.render(f"{i+1}. {entry['name']} - {entry['score']}", True, BLACK)
+                screen.blit(line, (80, y_offset))
+                y_offset += 45  # More space between scores
+        y_offset += 40  # Extra space between modes
+
+    # Back button
+    back_clicked = draw_button("BACK", WIDTH//2 - 100, HEIGHT - 80, 200, 50)
+    return back_clicked
 
 def spawn_platform():
     gap_x = random.randint(0, WIDTH - gap_width)
@@ -164,9 +200,10 @@ def reset_game():
     platform_speed = DIFFICULTY[difficulty]["speed"]
     spawn_timer = 0
     score = 0
+    game_mode = difficulty
 
 def main_game():
-    global player_x, player_y, velocity_y, platforms, platform_speed, spawn_timer, score, game_mode, difficulty
+    global player_x, player_y, velocity_y, platforms, platform_speed, spawn_timer, score
     reset_game()
     running = True
     settings = DIFFICULTY[difficulty]
@@ -182,82 +219,62 @@ def main_game():
                 if event.key == pygame.K_ESCAPE:
                     return False, 0
 
-        # Input
         keys = pygame.key.get_pressed()
         if keys[pygame.K_a] or keys[pygame.K_LEFT]:
             player_x -= player_speed
         if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
             player_x += player_speed
         if keys[pygame.K_w] or keys[pygame.K_UP] or keys[pygame.K_SPACE]:
-            if player_y >= HEIGHT - player_size - 10:  # Can jump from bottom
+            if player_y >= HEIGHT - player_size - 10:
                 velocity_y = -15
         if keys[pygame.K_s] or keys[pygame.K_DOWN]:
             player_y += player_speed
 
-        # Physics
         velocity_y += settings["gravity"]
         player_y += velocity_y
-        platform_speed = settings["speed"]
 
-        # FIXED COLLISION - Bottom acts like invisible platform
-        # Sides
         if player_x < 0:
             player_x = 0
         if player_x > WIDTH - player_size:
             player_x = WIDTH - player_size
-            
-        # Top - GAME OVER
         if player_y < 0:
             return True, score
-            
-        # Bottom - invisible platform collision
         if player_y > HEIGHT - player_size:
             player_y = HEIGHT - player_size
             velocity_y = 0
 
-        # Platforms spawning
         spawn_timer += 1
         if spawn_timer > settings["spawn_rate"]:
             spawn_platform()
             spawn_timer = 0
 
-        # Update platforms
         for plat in platforms[:]:
             plat['y'] -= platform_speed
             if plat['y'] > HEIGHT:
                 platforms.remove(plat)
                 continue
-                
-            # Draw platforms
             pygame.draw.rect(screen, WHITE, (0, plat['y'], plat['gap_x'], platform_height))
             pygame.draw.rect(screen, WHITE, (plat['gap_x'] + gap_width, plat['y'], WIDTH - plat['gap_x'] - gap_width, platform_height))
 
-        # FIXED COLLISION - Can't jump through platforms
         for plat in platforms:
             plat_top = plat['y']
             plat_bottom = plat['y'] + platform_height
-            
-            # Vertical collision
             if (player_y < plat_bottom and player_y + player_size > plat_top and
                 player_x + player_size > 0 and player_x < WIDTH):
-                
-                # Not in gap = collision
                 if not (plat['gap_x'] < player_x + player_size and plat['gap_x'] + gap_width > player_x):
                     player_y = plat_top - player_size
                     velocity_y = 0
 
-        # Scoring
         for plat in platforms:
             if plat['y'] + platform_height < player_y and not plat['scored']:
                 score += 1
                 plat['scored'] = True
 
-        # Draw everything
         pygame.draw.rect(screen, RED, (player_x, player_y, player_size, player_size))
-        score_text = font.render(f"Score: {score} | {difficulty.upper()}", True, WHITE)
+        score_text = font.render(f"Score: {score} | {difficulty.upper()}", True, BLACK)
         screen.blit(score_text, (20, 20))
-        controls = small_font.render("A/D or Arrows: Move | W/Up/Space: Jump | ESC: Menu", True, WHITE)
-        screen.blit(controls, (20, HEIGHT - 60))
+        controls = small_font.render("A/D or Arrows: Move | W/Up/Space: Jump | ESC: Menu", True, BLACK)
+        screen.blit(controls, (20, HEIGHT - 50))
 
         pygame.display.flip()
 
@@ -269,16 +286,16 @@ def name_entry_screen(final_score):
     while entering:
         screen.fill(BG)
         
-        title = title_font.render(f"FINAL SCORE: {final_score}", True, WHITE)
+        title = title_font.render(f"FINAL SCORE: {final_score}", True, BLACK)
         screen.blit(title, (WIDTH//2 - title.get_width()//2, HEIGHT//4))
         
-        prompt = font.render("Enter name:", True, WHITE)
+        prompt = font.render("Enter name:", True, BLACK)
         screen.blit(prompt, (WIDTH//2 - prompt.get_width()//2, HEIGHT//2))
         
-        name_surf = font.render(name + "_", True, WHITE)
+        name_surf = font.render(name + "_", True, BLACK)
         screen.blit(name_surf, (WIDTH//2 - name_surf.get_width()//2, HEIGHT//2 + 60))
         
-        info = small_font.render("ENTER=save ESC=menu", True, WHITE)
+        info = small_font.render("ENTER=save ESC=leaderboards", True, BLACK)
         screen.blit(info, (WIDTH//2 - info.get_width()//2, HEIGHT//2 + 120))
         
         pygame.display.flip()
@@ -288,53 +305,41 @@ def name_entry_screen(final_score):
                 return False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    return False
+                    return True  # Go to leaderboards
                 elif event.key == pygame.K_RETURN:
                     if name.strip():
                         save_score(game_mode, name, final_score)
                     else:
                         save_score(game_mode, "PLAYER", final_score)
                     entering = False
+                    return True  # Go to leaderboards
                 elif event.key == pygame.K_BACKSPACE:
                     name = name[:-1]
                 else:
                     if len(name) < 12 and event.unicode.isprintable():
                         name += event.unicode
-
-def show_leaderboards():
-    screen.fill(BG)
-    title = title_font.render("LEADERBOARDS", True, WHITE)
-    screen.blit(title, (WIDTH//2 - title.get_width()//2, 30))
-    
-    y_offset = 120
-    for mode in ["easy", "normal", "hard"]:
-        mode_title = font.render(f"{mode.upper()}:", True, WHITE)
-        screen.blit(mode_title, (50, y_offset))
-        y_offset += 50
-        
-        scores = load_scores(mode)
-        if not scores:
-            no_scores = small_font.render("No scores yet", True, GRAY)
-            screen.blit(no_scores, (100, y_offset))
-        else:
-            for i, entry in enumerate(scores):
-                line = small_font.render(f"{i+1}. {entry['name']} - {entry['score']}", True, WHITE)
-                screen.blit(line, (100, y_offset))
-                y_offset += 35
-        y_offset += 20
+    return False
 
 def main():
-    global state, difficulty, game_mode
+    global state, difficulty
     
-    print("Descent Game - Fullscreen ready!")
+    print("Descent Game - Fixed version!")
     
     while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    state = "menu"
+        
         if state == "menu":
-            play_clicked, settings_clicked = draw_home_menu()
+            play_clicked, leaderboard_clicked, settings_clicked = draw_home_menu()
             if play_clicked:
                 state = "playing"
-                game_mode = difficulty
-            if settings_clicked:
+            elif leaderboard_clicked:
+                state = "leaderboards"
+            elif settings_clicked:
                 state = "settings"
                 
         elif state == "settings":
@@ -357,33 +362,21 @@ def main():
         elif state == "playing":
             game_over, final_score = main_game()
             if game_over:
-                state = "name_entry"
-                name_result = name_entry_screen(final_score)
-                if name_result:
+                show_leaderboards = name_entry_screen(final_score)
+                if show_leaderboards:
                     state = "leaderboards"
                 else:
                     state = "menu"
             else:
                 state = "menu"
                 
-        elif state == "name_entry":
-            pass  # handled in playing transition
-            
         elif state == "leaderboards":
-            show_leaderboards()
-            # Auto return to menu after showing scores
-            pygame.time.wait(2000)
-            state = "menu"
-        
-        # Handle ESC in all states
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    state = "menu"
+            back_clicked = draw_leaderboards()
+            if back_clicked:
+                state = "menu"
         
         pygame.display.flip()
+        clock.tick(60)
 
 if __name__ == "__main__":
     main()
