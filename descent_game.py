@@ -11,15 +11,17 @@ except Exception as e:
     input("Press Enter to exit...")
     sys.exit()
 
-# Fixed window size (not fullscreen)
-WIDTH, HEIGHT = 800, 600
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
+# Auto-fit to screen (not fixed size)
+info = pygame.display.Info()
+WIDTH = min(info.current_w * 0.9, 1000)  # 90% of screen width, max 1000
+HEIGHT = min(info.current_h * 0.9, 700)  # 90% of screen height, max 700
+screen = pygame.display.set_mode((int(WIDTH), int(HEIGHT)))
 pygame.display.set_caption("Descent Game")
 clock = pygame.time.Clock()
 
 # Colors
 RED = (255, 0, 0)
-BLACK = (0, 0, 0)  # Changed to black text
+BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 BG = (20, 20, 20)
 GRAY = (100, 100, 100)
@@ -27,26 +29,30 @@ GREEN = (0, 255, 0)
 BLUE = (0, 100, 255)
 
 # Fonts
-title_font = pygame.font.SysFont(None, 72)
-font = pygame.font.SysFont(None, 48)
-small_font = pygame.font.SysFont(None, 36)
+title_font = pygame.font.SysFont(None, min(72, HEIGHT//10))
+font = pygame.font.SysFont(None, min(48, HEIGHT//12))
+small_font = pygame.font.SysFont(None, min(36, HEIGHT//16))
 
 # Game state
 state = "menu"
-player_size = 40
+player_size = min(WIDTH, HEIGHT) // 20
 player_x = WIDTH // 2 - player_size // 2
 player_y = HEIGHT // 4
-player_speed = 8
+player_speed = max(WIDTH, HEIGHT) // 100
 gravity = 0.3
 velocity_y = 0
-platform_height = 25
-gap_width = 150
+platform_height = max(WIDTH, HEIGHT) // 40
+gap_width = WIDTH // 4
 platforms = []
 platform_speed = 2
 spawn_timer = 0
 score = 0
 difficulty = "normal"
-game_mode = "easy"
+game_mode = "normal"
+leaderboard_mode = "normal"  # Default leaderboard
+gradual_speed = True  # Default enabled
+speed_increase_rate = 2  # easy=1, medium=2, hard=3
+help_typed = False  # For secret slider
 
 # Difficulty settings
 DIFFICULTY = {
@@ -100,39 +106,48 @@ def draw_button(text, x, y, w, h, color=WHITE, hover_color=GREEN, selected=False
         pygame.draw.rect(screen, color if not selected else GREEN, rect)
     pygame.draw.rect(screen, WHITE, rect, 3)
     
-    text_surf = small_font.render(text, True, BLACK)  # Black text
+    text_surf = small_font.render(text, True, BLACK)
     screen.blit(text_surf, (x + (w - text_surf.get_width()) // 2, y + (h - text_surf.get_height()) // 2))
     return False
+
+def draw_slider(x, y, w, h, value, min_val, max_val):
+    # Background
+    pygame.draw.rect(screen, GRAY, (x, y, w, h))
+    # Fill
+    fill_w = int((value - min_val) / (max_val - min_val) * w)
+    pygame.draw.rect(screen, GREEN, (x, y, fill_w, h))
+    pygame.draw.rect(screen, WHITE, (x, y, w, h), 2)
+    
+    # Knob
+    knob_x = x + fill_w - 8
+    pygame.draw.circle(screen, WHITE, (int(knob_x), y + h//2), 8)
 
 def draw_home_menu():
     screen.fill(BG)
     
-    # Logo - big red square
-    logo_size = 120
+    logo_size = min(WIDTH, HEIGHT) // 8
     pygame.draw.rect(screen, RED, (WIDTH//2 - logo_size//2, HEIGHT//4 - logo_size//2, logo_size, logo_size))
     
-    # Title - black text
     title = title_font.render("DESCENT", True, BLACK)
-    screen.blit(title, (WIDTH//2 - title.get_width()//2, HEIGHT//4 - 120))
+    screen.blit(title, (WIDTH//2 - title.get_width()//2, HEIGHT//4 - 140))
     
-    # Buttons - more spacing
-    btn_w, btn_h = 200, 60
+    btn_w, btn_h = WIDTH//3, HEIGHT//12
     btn_y = HEIGHT//2
     play_clicked = draw_button("PLAY", WIDTH//2 - btn_w//2, btn_y, btn_w, btn_h)
-    leaderboard_clicked = draw_button("LEADERBOARD", WIDTH//2 - btn_w//2, btn_y + 80, btn_w, btn_h)
-    settings_clicked = draw_button("SETTINGS", WIDTH//2 - btn_w//2, btn_y + 160, btn_w, btn_h)
+    leaderboard_clicked = draw_button("LEADERBOARD", WIDTH//2 - btn_w//2, btn_y + btn_h + 20, btn_w, btn_h)
+    settings_clicked = draw_button("SETTINGS", WIDTH//2 - btn_w//2, btn_y + 2*(btn_h + 20), btn_w, btn_h)
     
     return play_clicked, leaderboard_clicked, settings_clicked
 
 def draw_settings():
+    global help_typed, gradual_speed, speed_increase_rate
+    
     screen.fill(BG)
-    
-    # Title - black text
     title = title_font.render("SETTINGS", True, BLACK)
-    screen.blit(title, (WIDTH//2 - title.get_width()//2, 50))
+    screen.blit(title, (WIDTH//2 - title.get_width()//2, 40))
     
-    # Difficulty buttons - centered perfectly
-    btn_w, btn_h = 120, 50
+    # Difficulty buttons
+    btn_w, btn_h = WIDTH//5, HEIGHT//14
     y_start = HEIGHT//3
     easy_x = WIDTH//2 - btn_w*1.5 - 20
     normal_x = WIDTH//2 - btn_w//2
@@ -142,14 +157,27 @@ def draw_settings():
     normal_clicked = draw_button("NORMAL", normal_x, y_start, btn_w, btn_h, selected=difficulty == "normal")
     hard_clicked = draw_button("HARD", hard_x, y_start, btn_w, btn_h, selected=difficulty == "hard")
     
-    # Clear leaderboard buttons - perfectly centered under each
-    clear_y = y_start + 80
-    clear_easy = draw_button("Clear Easy", easy_x, clear_y, btn_w, 35)
-    clear_normal = draw_button("Clear Normal", normal_x, clear_y, btn_w, 35)
-    clear_hard = draw_button("Clear Hard", hard_x, clear_y, btn_w, 35)
+    # Clear buttons
+    clear_y = y_start + btn_h + 40
+    clear_easy = draw_button("Clear Easy", easy_x, clear_y, btn_w, btn_h//1.3)
+    clear_normal = draw_button("Clear Normal", normal_x, clear_y, btn_w, btn_h//1.3)
+    clear_hard = draw_button("Clear Hard", hard_x, clear_y, btn_w, btn_h//1.3)
     
-    # Back button
-    back_clicked = draw_button("BACK", WIDTH//2 - 100, HEIGHT - 100, 200, 50)
+    # Secret slider (type "help" to show)
+    slider_y = HEIGHT//2 + 40
+    if help_typed:
+        slider_title = small_font.render("Gradual Speed Increase:", True, BLACK)
+        screen.blit(slider_title, (WIDTH//2 - 200, slider_y - 30))
+        draw_slider(WIDTH//2 - 150, slider_y, 300, 20, speed_increase_rate, 1, 3)
+        status = small_font.render("Easy" if speed_increase_rate == 1 else "Medium" if speed_increase_rate == 2 else "Hard", True, BLACK)
+        screen.blit(status, (WIDTH//2 + 160, slider_y - 5))
+        gradual_text = small_font.render(f"Enabled: {'ON' if gradual_speed else 'OFF'}", True, GREEN if gradual_speed else GRAY)
+        screen.blit(gradual_text, (WIDTH//2 - 100, slider_y + 30))
+    
+    help_text = small_font.render('"help" = secret settings', True, GRAY)
+    screen.blit(help_text, (20, HEIGHT - 40))
+    
+    back_clicked = draw_button("BACK", WIDTH//2 - 100, HEIGHT - 100, 200, HEIGHT//15)
     
     return {
         "easy": easy_clicked, "normal": normal_clicked, "hard": hard_clicked,
@@ -160,32 +188,35 @@ def draw_settings():
 def draw_leaderboards():
     screen.fill(BG)
     
-    # Title
-    title = title_font.render("LEADERBOARDS", True, BLACK)
-    screen.blit(title, (WIDTH//2 - title.get_width()//2, 30))
+    title = title_font.render(f"{leaderboard_mode.upper()} LEADERBOARD", True, BLACK)
+    screen.blit(title, (WIDTH//2 - title.get_width()//2, 40))
     
-    # More spacing between modes
-    y_offset = 120
-    for mode in ["easy", "normal", "hard"]:
-        # Mode title
-        mode_title = font.render(f"{mode.upper()}:", True, BLACK)
-        screen.blit(mode_title, (50, y_offset))
-        y_offset += 60  # More space
-        
-        scores = load_scores(mode)
-        if not scores:
-            no_scores = small_font.render("No scores yet", True, BLACK)
-            screen.blit(no_scores, (80, y_offset))
-        else:
-            for i, entry in enumerate(scores):
-                line = small_font.render(f"{i+1}. {entry['name']} - {entry['score']}", True, BLACK)
-                screen.blit(line, (80, y_offset))
-                y_offset += 45  # More space between scores
-        y_offset += 40  # Extra space between modes
+    # Difficulty selector buttons
+    btn_w, btn_h = WIDTH//6, HEIGHT//14
+    easy_lb = draw_button("EASY", 50, 120, btn_w, btn_h, selected=leaderboard_mode == "easy")
+    normal_lb = draw_button("NORMAL", WIDTH//2 - btn_w//2, 120, btn_w, btn_h, selected=leaderboard_mode == "normal")
+    hard_lb = draw_button("HARD", WIDTH - 50 - btn_w, 120, btn_w, btn_h, selected=leaderboard_mode == "hard")
+    
+    # Current leaderboard
+    scores = load_scores(leaderboard_mode)
+    y_offset = 200
+    if not scores:
+        no_scores = font.render("No scores yet", True, BLACK)
+        screen.blit(no_scores, (WIDTH//2 - no_scores.get_width()//2, y_offset))
+    else:
+        for i, entry in enumerate(scores):
+            line = font.render(f"{i+1}. {entry['name']} - {entry['score']}", True, BLACK)
+            screen.blit(line, (WIDTH//2 - line.get_width()//2, y_offset))
+            y_offset += 60
+    
+    back_clicked = draw_button("BACK", WIDTH//2 - 100, HEIGHT - 100, 200, HEIGHT//15)
+    
+    return {
+        "easy_lb": easy_lb, "normal_lb": normal_lb, "hard_lb": hard_lb,
+        "back": back_clicked
+    }
 
-    # Back button
-    back_clicked = draw_button("BACK", WIDTH//2 - 100, HEIGHT - 80, 200, 50)
-    return back_clicked
+# [spawn_platform, reset_game, main_game functions unchanged - same as previous version]
 
 def spawn_platform():
     gap_x = random.randint(0, WIDTH - gap_width)
@@ -203,14 +234,19 @@ def reset_game():
     game_mode = difficulty
 
 def main_game():
-    global player_x, player_y, velocity_y, platforms, platform_speed, spawn_timer, score
+    global player_x, player_y, velocity_y, platforms, platform_speed, spawn_timer, score, gradual_speed, speed_increase_rate
     reset_game()
     running = True
     settings = DIFFICULTY[difficulty]
+    base_speed = settings["speed"]
     
     while running:
         clock.tick(60)
         screen.fill(BG)
+
+        # Gradual speed increase
+        if gradual_speed:
+            platform_speed = base_speed + (score * speed_increase_rate * 0.02)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -273,8 +309,8 @@ def main_game():
         pygame.draw.rect(screen, RED, (player_x, player_y, player_size, player_size))
         score_text = font.render(f"Score: {score} | {difficulty.upper()}", True, BLACK)
         screen.blit(score_text, (20, 20))
-        controls = small_font.render("A/D or Arrows: Move | W/Up/Space: Jump | ESC: Menu", True, BLACK)
-        screen.blit(controls, (20, HEIGHT - 50))
+        gradual_text = small_font.render(f"Gradual: {'ON' if gradual_speed else 'OFF'}", True, GREEN if gradual_speed else GRAY)
+        screen.blit(gradual_text, (20, 60))
 
         pygame.display.flip()
 
@@ -305,14 +341,14 @@ def name_entry_screen(final_score):
                 return False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    return True  # Go to leaderboards
+                    return True
                 elif event.key == pygame.K_RETURN:
                     if name.strip():
                         save_score(game_mode, name, final_score)
                     else:
                         save_score(game_mode, "PLAYER", final_score)
                     entering = False
-                    return True  # Go to leaderboards
+                    return True
                 elif event.key == pygame.K_BACKSPACE:
                     name = name[:-1]
                 else:
@@ -321,9 +357,9 @@ def name_entry_screen(final_score):
     return False
 
 def main():
-    global state, difficulty
+    global state, difficulty, leaderboard_mode, help_typed, gradual_speed, speed_increase_rate
     
-    print("Descent Game - Fixed version!")
+    print("Descent Game - Auto-fit screen!")
     
     while True:
         for event in pygame.event.get():
@@ -332,24 +368,39 @@ def main():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     state = "menu"
+                # Settings help detection
+                if state == "settings":
+                    if event.unicode.lower() == 'h' and help_typed:
+                        help_typed = False
+                    elif event.unicode.lower() == 'e' and help_typed:
+                        help_typed = False
+                    elif event.unicode.lower() == 'l' and not help_typed:
+                        help_typed = True
+                    elif event.unicode.lower() == 'p' and help_typed:
+                        help_typed = False
         
         if state == "menu":
             play_clicked, leaderboard_clicked, settings_clicked = draw_home_menu()
             if play_clicked:
                 state = "playing"
+                leaderboard_mode = difficulty  # Default to current difficulty
             elif leaderboard_clicked:
                 state = "leaderboards"
             elif settings_clicked:
                 state = "settings"
+                help_typed = False  # Reset each time
                 
         elif state == "settings":
             clicks = draw_settings()
             if clicks["easy"]:
                 difficulty = "easy"
+                speed_increase_rate = 1
             elif clicks["normal"]:
                 difficulty = "normal"
+                speed_increase_rate = 2
             elif clicks["hard"]:
                 difficulty = "hard"
+                speed_increase_rate = 3
             elif clicks["clear_easy"]:
                 clear_leaderboard("easy")
             elif clicks["clear_normal"]:
@@ -362,17 +413,24 @@ def main():
         elif state == "playing":
             game_over, final_score = main_game()
             if game_over:
-                show_leaderboards = name_entry_screen(final_score)
-                if show_leaderboards:
+                show_leaderboards_flag = name_entry_screen(final_score)
+                if show_leaderboards_flag:
                     state = "leaderboards"
+                    leaderboard_mode = game_mode
                 else:
                     state = "menu"
             else:
                 state = "menu"
                 
         elif state == "leaderboards":
-            back_clicked = draw_leaderboards()
-            if back_clicked:
+            clicks = draw_leaderboards()
+            if clicks["easy_lb"]:
+                leaderboard_mode = "easy"
+            elif clicks["normal_lb"]:
+                leaderboard_mode = "normal"
+            elif clicks["hard_lb"]:
+                leaderboard_mode = "hard"
+            elif clicks["back"]:
                 state = "menu"
         
         pygame.display.flip()
