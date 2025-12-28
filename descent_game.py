@@ -4,8 +4,14 @@ import sys
 import os
 import json
 
-# Initialize
-pygame.init()
+# Initialize with error handling
+try:
+    pygame.init()
+except Exception as e:
+    print(f"Pygame init failed: {e}")
+    input("Press Enter to exit...")
+    sys.exit()
+
 WIDTH, HEIGHT = 400, 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Vertical Descent")
@@ -19,14 +25,13 @@ BG = (20, 20, 20)
 # Fonts
 font = pygame.font.SysFont(None, 36)
 
-# Player / game globals (will be reset each run)
+# Player / game globals
 player_size = 30
 player_x = WIDTH // 2
 player_y = 50
 player_speed = 5
 gravity = 0.5
 velocity_y = 0
-
 platform_height = 20
 gap_width = 100
 platforms = []
@@ -87,7 +92,6 @@ def reset_game():
 
 def main_game():
     global player_x, player_y, velocity_y, platforms, platform_speed, spawn_timer, score
-
     reset_game()
     running = True
     game_over = False
@@ -100,7 +104,7 @@ def main_game():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-                game_over = False  # don't show game over if just closing
+                game_over = False
 
         # Input
         keys = pygame.key.get_pressed()
@@ -122,11 +126,12 @@ def main_game():
             player_x = 0
         if player_x > WIDTH - player_size:
             player_x = WIDTH - player_size
-        if player_y > HEIGHT - player_size:
-            player_y = HEIGHT - player_size
-        if player_y <= 0:
-            running = False
+        if player_y > HEIGHT:
             game_over = True
+            running = False
+        if player_y < 0:
+            game_over = True
+            running = False
 
         # Spawn platforms
         spawn_timer += 1
@@ -135,25 +140,21 @@ def main_game():
             spawn_timer = 0
             platform_speed += 0.05
 
-        # Move and draw platforms
-        for plat in platforms:
+        # Move and clean up platforms
+        for plat in platforms[:]:
             plat['y'] -= platform_speed
+            if plat['y'] > HEIGHT:
+                platforms.remove(plat)
+                continue
             pygame.draw.rect(screen, WHITE, (0, plat['y'], plat['gap_x'], platform_height))
-            pygame.draw.rect(
-                screen,
-                WHITE,
-                (plat['gap_x'] + gap_width,
-                 plat['y'],
-                 WIDTH - plat['gap_x'] - gap_width,
-                 platform_height),
-            )
+            pygame.draw.rect(screen, WHITE, (plat['gap_x'] + gap_width, plat['y'], WIDTH - plat['gap_x'] - gap_width, platform_height))
 
         # Collision
         for plat in platforms:
-            if plat['y'] < player_y + player_size < plat['y'] + platform_height:
-                if not (plat['gap_x'] < player_x < plat['gap_x'] + gap_width):
-                    player_y = plat['y'] - player_size
-                    velocity_y = 0
+            if (plat['y'] < player_y + player_size and plat['y'] + platform_height > player_y and
+                not (plat['gap_x'] < player_x + player_size and plat['gap_x'] + gap_width > player_x)):
+                player_y = plat['y'] - player_size
+                velocity_y = 0
 
         # Scoring
         for plat in platforms:
@@ -170,38 +171,36 @@ def main_game():
 
         pygame.display.flip()
 
-    return game_over
+    return game_over, score
 
-def game_over_and_scores():
+def game_over_and_scores(final_score):
     global score
+    score = final_score
 
-    # Game Over: Enter name and show highscores
+    # Enter name
     name = ""
     entering = True
     while entering:
         screen.fill(BG)
         prompt = font.render("Game Over! Enter name:", True, WHITE)
         screen.blit(prompt, (WIDTH // 2 - prompt.get_width() // 2, 150))
-
-        name_text = font.render(name, True, WHITE)
+        name_text = font.render(name + "_", True, WHITE)
         screen.blit(name_text, (WIDTH // 2 - name_text.get_width() // 2, 200))
-
-        info = font.render("ENTER = save   ESC = skip", True, WHITE)
+        info = font.render("ENTER=save ESC=skip", True, WHITE)
         screen.blit(info, (WIDTH // 2 - info.get_width() // 2, 250))
-
         pygame.display.flip()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                entering = False
-                return False  # don't continue
+                return False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     entering = False
                 elif event.key == pygame.K_RETURN:
-                    if name.strip() == "":
-                        name = "PLAYER"
-                    save_score(name, score)
+                    if name.strip():
+                        save_score(name, score)
+                    else:
+                        save_score("PLAYER", score)
                     entering = False
                 elif event.key == pygame.K_BACKSPACE:
                     name = name[:-1]
@@ -209,10 +208,37 @@ def game_over_and_scores():
                     if len(name) < 10 and event.unicode.isprintable():
                         name += event.unicode
 
-    # Show highscores + play again prompt
+    # Highscores + play again
     while True:
         screen.fill(BG)
         draw_highscores()
         info1 = font.render("ENTER = play again", True, WHITE)
-        info2 = font.render("ESC / close = quit", True, WHITE)
-        screen.blit(info
+        info2 = font.render("ESC = quit", True, WHITE)
+        screen.blit(info1, (WIDTH // 2 - info1.get_width() // 2, HEIGHT - 90))
+        screen.blit(info2, (WIDTH // 2 - info2.get_width() // 2, HEIGHT - 60))
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    return False
+                elif event.key == pygame.K_RETURN:
+                    return True
+
+def main():
+    print("Vertical Descent starting... Close window or ESC to quit.")
+    while True:
+        game_over, final_score = main_game()
+        if not game_over:
+            break
+        play_again = game_over_and_scores(final_score)
+        if not play_again:
+            break
+    print("Thanks for playing!")
+    pygame.quit()
+    sys.exit()
+
+if __name__ == "__main__":
+    main()
