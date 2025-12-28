@@ -11,11 +11,10 @@ except Exception as e:
     input("Press Enter to exit...")
     sys.exit()
 
-# Auto-fit to screen (not fixed size)
-info = pygame.display.Info()
-WIDTH = min(info.current_w * 0.9, 1000)  # 90% of screen width, max 1000
-HEIGHT = min(info.current_h * 0.9, 700)  # 90% of screen height, max 700
-screen = pygame.display.set_mode((int(WIDTH), int(HEIGHT)))
+# Proper fullscreen that fills screen
+screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+WIDTH = screen.get_width()
+HEIGHT = screen.get_height()
 pygame.display.set_caption("Descent Game")
 clock = pygame.time.Clock()
 
@@ -26,9 +25,8 @@ WHITE = (255, 255, 255)
 BG = (20, 20, 20)
 GRAY = (100, 100, 100)
 GREEN = (0, 255, 0)
-BLUE = (0, 100, 255)
 
-# Fonts
+# Fonts - scale to screen
 title_font = pygame.font.SysFont(None, min(72, HEIGHT//10))
 font = pygame.font.SysFont(None, min(48, HEIGHT//12))
 small_font = pygame.font.SysFont(None, min(36, HEIGHT//16))
@@ -49,19 +47,17 @@ spawn_timer = 0
 score = 0
 difficulty = "normal"
 game_mode = "normal"
-leaderboard_mode = "normal"  # Default leaderboard
-gradual_speed = True  # Default enabled
-speed_increase_rate = 2  # easy=1, medium=2, hard=3
-help_typed = False  # For secret slider
+leaderboard_mode = "normal"
+gradual_speed = True  # Always enabled by default, same across difficulties
+help_typed = False  # Secret settings access
 
-# Difficulty settings
+# Difficulty settings (speed same across all, only spawn_rate/gravity differ)
 DIFFICULTY = {
-    "easy": {"speed": 1.5, "spawn_rate": 90, "gravity": 0.2},
-    "normal": {"speed": 3.0, "spawn_rate": 60, "gravity": 0.4},
-    "hard": {"speed": 6.0, "spawn_rate": 40, "gravity": 0.6}
+    "easy": {"speed": 2.0, "spawn_rate": 90, "gravity": 0.2},
+    "normal": {"speed": 2.0, "spawn_rate": 60, "gravity": 0.4},
+    "hard": {"speed": 2.0, "spawn_rate": 40, "gravity": 0.6}
 }
 
-# Leaderboard files
 SCORE_FILES = {
     "easy": "highscores_easy.json",
     "normal": "highscores_normal.json", 
@@ -110,17 +106,18 @@ def draw_button(text, x, y, w, h, color=WHITE, hover_color=GREEN, selected=False
     screen.blit(text_surf, (x + (w - text_surf.get_width()) // 2, y + (h - text_surf.get_height()) // 2))
     return False
 
-def draw_slider(x, y, w, h, value, min_val, max_val):
-    # Background
+def draw_checkbox_slider(x, y, w, h, enabled):
+    # Slider background
     pygame.draw.rect(screen, GRAY, (x, y, w, h))
-    # Fill
-    fill_w = int((value - min_val) / (max_val - min_val) * w)
-    pygame.draw.rect(screen, GREEN, (x, y, fill_w, h))
     pygame.draw.rect(screen, WHITE, (x, y, w, h), 2)
     
-    # Knob
-    knob_x = x + fill_w - 8
-    pygame.draw.circle(screen, WHITE, (int(knob_x), y + h//2), 8)
+    # Fill if enabled
+    if enabled:
+        pygame.draw.rect(screen, GREEN, (x, y, w, h))
+        
+    # Slider knob
+    knob_x = x + 5 if enabled else x + w - 15
+    pygame.draw.circle(screen, WHITE, (int(knob_x + 10), y + h//2), 10)
 
 def draw_home_menu():
     screen.fill(BG)
@@ -140,7 +137,7 @@ def draw_home_menu():
     return play_clicked, leaderboard_clicked, settings_clicked
 
 def draw_settings():
-    global help_typed, gradual_speed, speed_increase_rate
+    global help_typed, gradual_speed
     
     screen.fill(BG)
     title = title_font.render("SETTINGS", True, BLACK)
@@ -163,19 +160,17 @@ def draw_settings():
     clear_normal = draw_button("Clear Normal", normal_x, clear_y, btn_w, btn_h//1.3)
     clear_hard = draw_button("Clear Hard", hard_x, clear_y, btn_w, btn_h//1.3)
     
-    # Secret slider (type "help" to show)
+    # SECRET gradual speed checkbox slider (type "help")
     slider_y = HEIGHT//2 + 40
     if help_typed:
-        slider_title = small_font.render("Gradual Speed Increase:", True, BLACK)
+        slider_title = small_font.render("Gradual Speed Increase", True, BLACK)
         screen.blit(slider_title, (WIDTH//2 - 200, slider_y - 30))
-        draw_slider(WIDTH//2 - 150, slider_y, 300, 20, speed_increase_rate, 1, 3)
-        status = small_font.render("Easy" if speed_increase_rate == 1 else "Medium" if speed_increase_rate == 2 else "Hard", True, BLACK)
-        screen.blit(status, (WIDTH//2 + 160, slider_y - 5))
-        gradual_text = small_font.render(f"Enabled: {'ON' if gradual_speed else 'OFF'}", True, GREEN if gradual_speed else GRAY)
-        screen.blit(gradual_text, (WIDTH//2 - 100, slider_y + 30))
-    
-    help_text = small_font.render('"help" = secret settings', True, GRAY)
-    screen.blit(help_text, (20, HEIGHT - 40))
+        mouse = pygame.mouse.get_pos()
+        click = pygame.mouse.get_pressed()
+        slider_rect = pygame.Rect(WIDTH//2 - 100, slider_y, 200, 30)
+        draw_checkbox_slider(slider_rect.x, slider_rect.y, slider_rect.w, slider_rect.h, gradual_speed)
+        if slider_rect.collidepoint(mouse) and click[0] == 1:
+            gradual_speed = not gradual_speed
     
     back_clicked = draw_button("BACK", WIDTH//2 - 100, HEIGHT - 100, 200, HEIGHT//15)
     
@@ -216,8 +211,6 @@ def draw_leaderboards():
         "back": back_clicked
     }
 
-# [spawn_platform, reset_game, main_game functions unchanged - same as previous version]
-
 def spawn_platform():
     gap_x = random.randint(0, WIDTH - gap_width)
     platforms.append({'y': HEIGHT, 'gap_x': gap_x, 'scored': False})
@@ -234,7 +227,7 @@ def reset_game():
     game_mode = difficulty
 
 def main_game():
-    global player_x, player_y, velocity_y, platforms, platform_speed, spawn_timer, score, gradual_speed, speed_increase_rate
+    global player_x, player_y, velocity_y, platforms, platform_speed, spawn_timer, score
     reset_game()
     running = True
     settings = DIFFICULTY[difficulty]
@@ -244,9 +237,10 @@ def main_game():
         clock.tick(60)
         screen.fill(BG)
 
-        # Gradual speed increase
+        # Gradual speed increase (secret feature)
+        current_speed = base_speed
         if gradual_speed:
-            platform_speed = base_speed + (score * speed_increase_rate * 0.02)
+            current_speed += score * 0.02  # Simple gradual increase
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -254,6 +248,8 @@ def main_game():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     return False, 0
+                if event.key == pygame.K_F11:  # F11 toggle fullscreen (backup)
+                    pygame.display.toggle_fullscreen()
 
         keys = pygame.key.get_pressed()
         if keys[pygame.K_a] or keys[pygame.K_LEFT]:
@@ -268,6 +264,7 @@ def main_game():
 
         velocity_y += settings["gravity"]
         player_y += velocity_y
+        platform_speed = current_speed
 
         if player_x < 0:
             player_x = 0
@@ -309,8 +306,8 @@ def main_game():
         pygame.draw.rect(screen, RED, (player_x, player_y, player_size, player_size))
         score_text = font.render(f"Score: {score} | {difficulty.upper()}", True, BLACK)
         screen.blit(score_text, (20, 20))
-        gradual_text = small_font.render(f"Gradual: {'ON' if gradual_speed else 'OFF'}", True, GREEN if gradual_speed else GRAY)
-        screen.blit(gradual_text, (20, 60))
+        controls = small_font.render("A/D Arrows: Move | W/Up/Space: Jump | ESC: Menu | F11: Fullscreen", True, BLACK)
+        screen.blit(controls, (20, HEIGHT - 50))
 
         pygame.display.flip()
 
@@ -357,9 +354,9 @@ def name_entry_screen(final_score):
     return False
 
 def main():
-    global state, difficulty, leaderboard_mode, help_typed, gradual_speed, speed_increase_rate
+    global state, difficulty, leaderboard_mode, help_typed, gradual_speed
     
-    print("Descent Game - Auto-fit screen!")
+    print("Descent Game - TRUE FULLSCREEN!")
     
     while True:
         for event in pygame.event.get():
@@ -368,39 +365,36 @@ def main():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     state = "menu"
-                # Settings help detection
+                # Secret "help" detection in settings (no visual indicator)
                 if state == "settings":
-                    if event.unicode.lower() == 'h' and help_typed:
-                        help_typed = False
+                    if event.unicode.lower() == 'h':
+                        help_typed = True
                     elif event.unicode.lower() == 'e' and help_typed:
-                        help_typed = False
-                    elif event.unicode.lower() == 'l' and not help_typed:
+                        help_typed = True
+                    elif event.unicode.lower() == 'l' and help_typed:
                         help_typed = True
                     elif event.unicode.lower() == 'p' and help_typed:
-                        help_typed = False
+                        help_typed = False  # Reset after full "help"
         
         if state == "menu":
             play_clicked, leaderboard_clicked, settings_clicked = draw_home_menu()
             if play_clicked:
                 state = "playing"
-                leaderboard_mode = difficulty  # Default to current difficulty
+                leaderboard_mode = difficulty
             elif leaderboard_clicked:
                 state = "leaderboards"
             elif settings_clicked:
                 state = "settings"
-                help_typed = False  # Reset each time
+                help_typed = False  # Reset secret each visit
                 
         elif state == "settings":
             clicks = draw_settings()
             if clicks["easy"]:
                 difficulty = "easy"
-                speed_increase_rate = 1
             elif clicks["normal"]:
                 difficulty = "normal"
-                speed_increase_rate = 2
             elif clicks["hard"]:
                 difficulty = "hard"
-                speed_increase_rate = 3
             elif clicks["clear_easy"]:
                 clear_leaderboard("easy")
             elif clicks["clear_normal"]:
